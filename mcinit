@@ -1,0 +1,215 @@
+#!/usr/local/bin/bash
+
+# Source from http://minecraft.gamepedia.com/Tutorials/Server_startup_script
+# Made changes to suit my needs, now serves as a proper croncheck script
+# There will be bugs.  Fix them.  Send me a note about it if you like and
+# I'll include them.  I can be reached on reddit as /u/jbranscum or post an
+# issue on GitHub utoc/mcinit
+#
+# Licensing here: https://github.com/utoc/Dont-be-a-Jerk
+# This is open source.  Give credit where it is due if you decide to modify
+# this script as I have done
+#
+# Replace HOMEDIR, MCUSERNAME, MCSERVERDIR as needed.
+# Cron entry should look like so:
+# */5 * * * * /home/HOMEDIR/scripts/mcinit croncheck
+# 30 04 * * * /home/HOMEDIR/scripts/mcinit restart
+#
+# You need screen, uuencode and mailx for this script in addition to standard bash tools (pgrep, etc)
+# I cannot provide support on this.  Use at your own risk.  You have been warned.
+#
+# If you're unsure of yourself, see the following: http://youtu.be/nuHfVn_cfHU
+#
+# Also, these are Java 8 settings to use 4/8 gig ram.  If you have Java 7, make changes!
+ 
+#Settings
+PATH=/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin
+SERVICE='forge-1.7.10-10.13.4.1448-1.7.10-universal.jar'
+OPTIONS='nogui'
+USERNAME='MCUSERNAME'
+MCPATH='/home/HOMEDIR/MCSERVERDIR'
+MCNOSTART=$MCPATH/.nostart
+MCCRASH=$MCPATH/crash-reports
+MCLOG=$MCPATH/logs/fml-server-latest.log
+MAXHEAP=8192
+MINHEAP=4096
+YOUNGHEAP=2048
+HISTORY=1024
+CPU_COUNT=8
+INVOCATION="java -server \
+ -Xms${MINHEAP}m \
+ -Xmx${MAXHEAP}m \
+ -Xmn${YOUNGHEAP}m \
+ -XX:TargetSurvivorRatio=80 \
+ -XX:MaxTenuringThreshold=15 \
+ -XX:+UseFastAccessorMethods \
+ -XX:+OptimizeStringConcat \
+ -XX:+UseBiasedLocking \
+ -XX:+UseG1GC \
+ -XX:+DisableExplicitGC \
+ -XX:ParallelGCThreads=4 \
+ -XX:MaxGCPauseMillis=40 \
+ -XX:GCPauseIntervalMillis=150 \
+ -XX:+AggressiveOpts \
+ -XX:ReservedCodeCacheSize=2048m \
+ -XX:+UseCodeCacheFlushing \
+ -XX:CompileThreshold=1000 \
+ -Djava.net.preferIPv4Stack=true \
+ -jar $SERVICE $OPTIONS"
+ 
+ME=`whoami`
+as_user() {
+  if [ "$ME" = "$USERNAME" ] ; then
+    bash -c "$1"
+  else
+    su - "$USERNAME" -c "$1"
+  fi
+}
+
+mc_start() {
+  if pgrep -u $USERNAME -f $SERVICE > /dev/null
+  then
+    echo "$SERVICE is already running!"
+  else
+    echo "Starting $SERVICE..."
+    cd $MCPATH
+    as_user "cd $MCPATH && screen -h $HISTORY -dmS minecraft $INVOCATION"
+    sleep 7
+    if pgrep -u $USERNAME -f $SERVICE > /dev/null
+    then
+      echo "$SERVICE is now running."
+    else
+      echo "Error! Could not start $SERVICE!"
+    fi
+  fi
+}
+ 
+mc_disableAuto() {
+    echo "Disabling autostart"
+    touch $MCNOSTART
+}
+
+mc_enableAuto() {
+  if [[ -a $MCNOSTART ]] ; then 
+    echo "Enabling autostart"
+    rm $MCNOSTART
+  fi
+}
+
+mc_stop() {
+  if pgrep -u $USERNAME -f $SERVICE > /dev/null
+  then
+    echo "Stopping $SERVICE"
+    as_user "screen -p 0 -S minecraft -X eval 'stuff \"say SHUTTING DOWN IN 60 SECONDS.\"\015'"
+    sleep 30
+    as_user "screen -p 0 -S minecraft -X eval 'stuff \"say SHUTTING DOWN IN 30 SECONDS.\"\015'"
+    sleep 15
+    as_user "screen -p 0 -S minecraft -X eval 'stuff \"say SHUTTING DOWN IN 15 SECONDS.\"\015'"
+    sleep 15
+    as_user "screen -p 0 -S minecraft -X eval 'stuff \"stop\"\015'"
+    sleep 15
+  else
+    echo "$SERVICE was not running."
+  fi
+  if pgrep -u $USERNAME -f $SERVICE > /dev/null
+  then
+    echo "Error! $SERVICE could not be stopped."
+  else
+    echo "$SERVICE is stopped."
+  fi
+} 
+
+mc_restartannounce() {
+  if pgrep -u $USERNAME -f $SERVICE > /dev/null
+  then
+    echo "Broadcasting Restart"
+    as_user "screen -p 0 -S minecraft -X eval 'stuff \"say SCHEDULED RESTART IMMINENT, RESISTANCE IS FUTILE\"\015'"
+    sleep 20
+  else
+    echo "$SERVICE was not running."
+    exit 1
+  fi
+} 
+
+mc_stopnow() {
+  if pgrep -u $USERNAME -f $SERVICE > /dev/null
+  then
+    echo "Stopping $SERVICE"
+    as_user "screen -p 0 -S minecraft -X eval 'stuff \"say SHUTTING DOWN IN 5 SECONDS.\"\015'"
+    sleep 5
+    as_user "screen -p 0 -S minecraft -X eval 'stuff \"stop\"\015'"
+    sleep 15
+  else
+    echo "$SERVICE was not running."
+  fi
+  if pgrep -u $USERNAME -f $SERVICE > /dev/null
+  then
+    echo "Error! $SERVICE could not be stopped."
+  else
+    echo "$SERVICE is stopped."
+  fi
+} 
+
+mc_logcheck() {
+  CRASH=$(find $MCCRASH -maxdepth 1 -name '*.txt' -print -quit -cmin -60)
+  MCLOGLAST=$(stat -x $MCLOG)
+  MCLOGDATA=$(tail -n 150 $MCLOG)
+  if [[ -n $CRASH ]] ; then
+    echo "We have a crash log: $CRASH"
+    echo "Sending email to local account"
+    ( $MCLOGLAST ; tail -n 150 $MCLOG ; uuencode $CRASH $CRASH ) | mailx -s "Minecraft Server Crash" $USERNAME
+  else
+    if [[ ! -a $MCNOSTART ]] ; then
+      echo "Server not running, Autostart enabled"
+      echo "Last log entry from FML:"
+      stat -f "%m%t%Sm %N" $MCLOG | cut -f2
+      echo "Restarting Minecraft Server"
+      sleep 10
+      mc_start
+    fi
+  fi
+}
+
+#Start-Stop here
+case "$1" in
+  start)
+    mc_start
+    mc_enableAuto
+    ;;
+  stop)
+    mc_disableAuto
+    mc_stop
+    ;;
+  stopnow)
+    mc_disableAuto
+    mc_stopnow
+    ;;
+  restart)
+    mc_disableAuto
+    mc_restartannounce
+    mc_stopnow
+    sleep 20
+    mc_start
+    mc_enableAuto
+    ;;
+  status)
+    if pgrep -u $USERNAME -f $SERVICE > /dev/null
+    then
+      echo "$SERVICE is running."
+    else
+      echo "$SERVICE is not running."
+    fi
+    ;;
+  croncheck)
+    if ! pgrep -u $USERNAME -f $SERVICE > /dev/null
+    then
+      mc_logcheck
+    fi
+    ;;
+  *)
+  echo "Usage: $0 {start|stop|stopnow|restart|status|croncheck}"
+  exit 1
+  ;;
+esac
+ 
+exit 0
