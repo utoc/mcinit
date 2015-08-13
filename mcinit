@@ -23,19 +23,19 @@
 # Also, these are Java 8 settings to use 4/8 gig ram.  If you have Java 7, make changes!
  
 #Settings
-PATH=/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin
+PATH=/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin:/home/minecraft/scripts
 SERVICE='forge-1.7.10-10.13.4.1448-1.7.10-universal.jar'
 OPTIONS='nogui'
-USERNAME='MCUSERNAME'
-MCPATH='/home/HOMEDIR/MCSERVERDIR'
+USERNAME='username'
+MCPATH='/home/username/modded_dir'
 MCNOSTART=$MCPATH/.nostart
 MCCRASH=$MCPATH/crash-reports
 MCLOG=$MCPATH/logs/fml-server-latest.log
-MAXHEAP=8192
-MINHEAP=4096
-YOUNGHEAP=2048
+MAXHEAP=3072
+MINHEAP=3072
+YOUNGHEAP=1024
 HISTORY=1024
-CPU_COUNT=8
+CPU_COUNT=6
 INVOCATION="java -server \
  -Xms${MINHEAP}m \
  -Xmx${MAXHEAP}m \
@@ -47,9 +47,6 @@ INVOCATION="java -server \
  -XX:+UseBiasedLocking \
  -XX:+UseG1GC \
  -XX:+DisableExplicitGC \
- -XX:ParallelGCThreads=4 \
- -XX:MaxGCPauseMillis=40 \
- -XX:GCPauseIntervalMillis=150 \
  -XX:+AggressiveOpts \
  -XX:ReservedCodeCacheSize=2048m \
  -XX:+UseCodeCacheFlushing \
@@ -123,6 +120,10 @@ mc_restartannounce() {
   if pgrep -u $USERNAME -f $SERVICE > /dev/null
   then
     echo "Broadcasting Restart"
+#    as_user "screen -p 0 -S minecraft -X eval 'stuff \"sampler stop\"\015'"
+#    sleep 3
+#    as_user "screen -p 0 -S minecraft -X eval 'stuff \"sampler export samepler0\"\015'"
+#    sleep 10
     as_user "screen -p 0 -S minecraft -X eval 'stuff \"say SCHEDULED RESTART IMMINENT, RESISTANCE IS FUTILE\"\015'"
     sleep 20
   else
@@ -151,22 +152,24 @@ mc_stopnow() {
 } 
 
 mc_logcheck() {
+  if [[ -a $MCNOSTART ]] ; then
+    exit 0
+  fi
   CRASH=$(find $MCCRASH -maxdepth 1 -name '*.txt' -print -quit -cmin -60)
   MCLOGLAST=$(stat -x $MCLOG)
-  MCLOGDATA=$(tail -n 150 $MCLOG)
+  MCLOGDATA=$(grep -v FMLServerStoppedEvent $MCLOG | tail -150)
   if [[ -n $CRASH ]] ; then
     echo "We have a crash log: $CRASH"
     echo "Sending email to local account"
-    ( $MCLOGLAST ; tail -n 150 $MCLOG ; uuencode $CRASH $CRASH ) | mailx -s "Minecraft Server Crash" $USERNAME
-  else
-    if [[ ! -a $MCNOSTART ]] ; then
-      echo "Server not running, Autostart enabled"
-      echo "Last log entry from FML:"
-      stat -f "%m%t%Sm %N" $MCLOG | cut -f2
-      echo "Restarting Minecraft Server"
-      sleep 10
-      mc_start
-    fi
+    ( echo "$MCLOGLAST" ; echo "$MCLOGDATA" ; uuencode $CRASH crash-report.txt ) | mailx -s "BBQSauce Crash" $USERNAME
+  fi
+  if [[ ! -a $MCNOSTART ]] ; then
+    echo "Server not running, Autostart enabled"
+    echo "Last log entry from FML:"
+    stat -f "%m%t%Sm %N" $MCLOG | cut -f2
+    echo "Restarting BBQSauce"
+    sleep 10
+    mc_start
   fi
 }
 
