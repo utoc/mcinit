@@ -155,7 +155,8 @@ mc_logcheck() {
   if [[ -a $MCNOSTART ]] ; then
     exit 0
   fi
-  CRASH=$(find $MCCRASH -maxdepth 1 -name '*.txt' -print -quit -cmin -60)
+  CRASH=$(find $MCCRASH -maxdepth 1 -name '*.txt' -mtime -10m)
+#  CRASH=$(find $MCCRASH -maxdepth 1 -name '*.txt' -print -quit -mtime -10m)
   MCLOGLAST=$(stat -x $MCLOG)
   MCLOGDATA=$(grep -v FMLServerStoppedEvent $MCLOG | tail -150)
   if [[ -n $CRASH ]] ; then
