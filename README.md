@@ -18,6 +18,6 @@ Cron entry should look like so:
 You need screen, uuencode and mailx for this script in addition to standard bash tools (pgrep, etc)
 I cannot provide support on this.  Use at your own risk.  You have been warned.
 
-If you're unsure of yourself, see the following: http://youtu.be/nuHfVn_cfHU
+If you're unsure of yourself, see the following: https://www.youtube.com/watch?v=eh7lp9umG2I
 
 Also, these are Java 8 settings to use 4/8 gig ram.  If you have Java 7, make changes!
